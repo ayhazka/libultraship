@@ -314,6 +314,17 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
         num_floats += 4;
     }
 
+    if (cc_features.opt_alpha_threshold) {
+#ifdef __APPLE__
+        append_line(vs_buf, &vs_len, "in float aBlendAlpha;");
+        append_line(vs_buf, &vs_len, "out float vBlendAlpha;");
+#else
+        append_line(vs_buf, &vs_len, "attribute float aBlendAlpha;");
+        append_line(vs_buf, &vs_len, "varying float vBlendAlpha;");
+#endif
+        num_floats += 1;
+    }
+
     for (int i = 0; i < cc_features.num_inputs; i++) {
 #if defined(__APPLE__) || defined(USE_OPENGLES)
         vs_len += sprintf(vs_buf + vs_len, "in vec%d aInput%d;\n", cc_features.opt_alpha ? 4 : 3, i + 1);
@@ -341,6 +352,9 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
     }
     if (cc_features.opt_grayscale) {
         append_line(vs_buf, &vs_len, "vGrayscaleColor = aGrayscaleColor;");
+    }
+    if (cc_features.opt_alpha_threshold) {
+        append_line(vs_buf, &vs_len, "vBlendAlpha = aBlendAlpha;");
     }
     for (int i = 0; i < cc_features.num_inputs; i++) {
         vs_len += sprintf(vs_buf + vs_len, "vInput%d = aInput%d;\n", i + 1, i + 1);
@@ -387,6 +401,13 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
         append_line(fs_buf, &fs_len, "in vec4 vGrayscaleColor;");
 #else
         append_line(fs_buf, &fs_len, "varying vec4 vGrayscaleColor;");
+#endif
+    }
+    if (cc_features.opt_alpha_threshold) {
+#ifdef __APPLE__
+        append_line(fs_buf, &fs_len, "in float vBlendAlpha;");
+#else
+        append_line(fs_buf, &fs_len, "varying float vBlendAlpha;");
 #endif
     }
     for (int i = 0; i < cc_features.num_inputs; i++) {
@@ -567,7 +588,7 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
 
     if (cc_features.opt_alpha) {
         if (cc_features.opt_alpha_threshold) {
-            append_line(fs_buf, &fs_len, "if (texel.a < 8.0 / 256.0) discard;");
+            append_line(fs_buf, &fs_len, "if (texel.a < vBlendAlpha) discard;");
         }
         if (cc_features.opt_invisible) {
             append_line(fs_buf, &fs_len, "texel.a = 0.0;");
@@ -667,6 +688,12 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
     if (cc_features.opt_grayscale) {
         prg->attrib_locations[cnt] = glGetAttribLocation(shader_program, "aGrayscaleColor");
         prg->attrib_sizes[cnt] = 4;
+        ++cnt;
+    }
+
+    if (cc_features.opt_alpha_threshold) {
+        prg->attrib_locations[cnt] = glGetAttribLocation(shader_program, "aBlendAlpha");
+        prg->attrib_sizes[cnt] = 1;
         ++cnt;
     }
 

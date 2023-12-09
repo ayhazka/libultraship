@@ -10,7 +10,7 @@
 #include "Color3b.h"
 #include "Stream.h"
 
-class BinaryReader;
+//class BinaryReader;
 
 namespace LUS {
 

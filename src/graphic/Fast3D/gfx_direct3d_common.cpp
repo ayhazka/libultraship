@@ -160,6 +160,10 @@ void gfx_direct3d_common_build_shader(char buf[8192], size_t& len, size_t& num_f
         append_line(buf, &len, "    float4 grayscale : GRAYSCALE;");
         num_floats += 4;
     }
+    if (cc_features.opt_alpha_threshold) {
+        append_line(buf, &len, "    float blendAlpha : BLENDALPHA;");
+        num_floats += 1;
+    }
     for (int i = 0; i < cc_features.num_inputs; i++) {
         len += sprintf(buf + len, "    float%d input%d : INPUT%d;\r\n", cc_features.opt_alpha ? 4 : 3, i + 1, i);
         num_floats += cc_features.opt_alpha ? 4 : 3;
@@ -252,6 +256,9 @@ void gfx_direct3d_common_build_shader(char buf[8192], size_t& len, size_t& num_f
     if (cc_features.opt_grayscale) {
         append_str(buf, &len, ", float4 grayscale : GRAYSCALE");
     }
+    if (cc_features.opt_alpha_threshold) {
+        append_str(buf, &len, ", float blendAlpha : BLENDALPHA");
+    }
     for (int i = 0; i < cc_features.num_inputs; i++) {
         len += sprintf(buf + len, ", float%d input%d : INPUT%d", cc_features.opt_alpha ? 4 : 3, i + 1, i);
     }
@@ -275,6 +282,9 @@ void gfx_direct3d_common_build_shader(char buf[8192], size_t& len, size_t& num_f
     }
     if (cc_features.opt_grayscale) {
         append_line(buf, &len, "    result.grayscale = grayscale;");
+    }
+    if (cc_features.opt_alpha_threshold) {
+        append_line(buf, &len, "    result.blendAlpha = blendAlpha;");
     }
     for (int i = 0; i < cc_features.num_inputs; i++) {
         len += sprintf(buf + len, "    result.input%d = input%d;\r\n", i + 1, i + 1);
@@ -422,7 +432,7 @@ void gfx_direct3d_common_build_shader(char buf[8192], size_t& len, size_t& num_f
 
     if (cc_features.opt_alpha) {
         if (cc_features.opt_alpha_threshold) {
-            append_line(buf, &len, "    if (texel.a < 8.0 / 256.0) discard;");
+            append_line(buf, &len, "    if (texel.a < input.blendAlpha) discard;");
         }
         if (cc_features.opt_invisible) {
             append_line(buf, &len, "    texel.a = 0.0;");
