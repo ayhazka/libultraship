@@ -39,9 +39,8 @@
 #include <GLES3/gl3.h>
 #else
 #include <SDL2/SDL.h>
-#include <GL/glew.h>
 #define GL_GLEXT_PROTOTYPES 1
-// #include <SDL2/SDL_opengles2.h>
+#include <SDL2/SDL_opengl.h>
 #endif
 
 #include "gfx_cc.h"
@@ -555,12 +554,12 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
         append_line(fs_buf, &fs_len, ";");
 
         if (c == 0) {
-            append_str(fs_buf, &fs_len, "texel = WRAP(texel, -1.01, 1.01);");
+            append_str(fs_buf, &fs_len, "texel.rgb = WRAP(texel.rgb, -1.01, 1.01);");
         }
     }
 
-    append_str(fs_buf, &fs_len, "texel = WRAP(texel, -0.51, 1.51);");
-    append_str(fs_buf, &fs_len, "texel = clamp(texel, 0.0, 1.0);");
+    append_str(fs_buf, &fs_len, "texel.rgb = WRAP(texel.rgb, -0.51, 1.51);");
+    append_str(fs_buf, &fs_len, "texel.rgb = clamp(texel.rgb, 0.0, 1.0);");
     // TODO discard if alpha is 0?
     if (cc_features.opt_fog) {
         if (cc_features.opt_alpha) {
@@ -874,7 +873,7 @@ static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_
 }
 
 static void gfx_opengl_init(void) {
-#if !defined(__SWITCH__) && !defined(USE_OPENGLES)
+#if !defined(__SWITCH__) && !defined(__linux__)
     glewInit();
 #endif
 
@@ -1048,7 +1047,9 @@ gfx_opengl_get_pixel_depth(int fb_id, const std::set<std::pair<float, float>>& c
 
     Framebuffer& fb = framebuffers[fb_id];
 
-    if (coordinates.size() == 1) {
+    // When looking up one value and the framebuffer is single-sampled, we can read pixels directly
+    // Otherwise we need to blit first to a new buffer then read it
+    if (coordinates.size() == 1 && fb.msaa_level <= 1) {
         uint32_t depth_stencil_value;
         glBindFramebuffer(GL_FRAMEBUFFER, fb.fbo);
         int x = coordinates.begin()->first;

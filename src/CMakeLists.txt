@@ -235,8 +235,6 @@ set(Source_Files__Window__Gui
     ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/Gui.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/InputEditorWindow.h
     ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/InputEditorWindow.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/InputViewer.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/InputViewer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/GameOverlay.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/GameOverlay.h
     ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/Fonts.h
@@ -249,6 +247,14 @@ set(Source_Files__Window__Gui
     ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/GuiElement.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/GuiMenuBar.h
     ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/GuiMenuBar.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/resource/Font.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/resource/Font.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/resource/FontFactory.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/resource/FontFactory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/resource/GuiTexture.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/resource/GuiTexture.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/resource/GuiTextureFactory.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/window/gui/resource/GuiTextureFactory.cpp
 )
 
 source_group("window/gui" FILES ${Source_Files__Window__Gui})
@@ -318,8 +324,6 @@ target_sources(libultraship PRIVATE ${Source_Files__Port})
 #=================== Resource ===================
 
 set(Source_Files__Resource
-    ${CMAKE_CURRENT_SOURCE_DIR}/resource/Archive.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/resource/Archive.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/resource/File.h
     ${CMAKE_CURRENT_SOURCE_DIR}/resource/Resource.h
     ${CMAKE_CURRENT_SOURCE_DIR}/resource/ResourceType.h
@@ -329,7 +333,10 @@ set(Source_Files__Resource
     ${CMAKE_CURRENT_SOURCE_DIR}/resource/ResourceLoader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/resource/ResourceLoader.h
     ${CMAKE_CURRENT_SOURCE_DIR}/resource/ResourceFactory.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/resource/ResourceFactory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/ResourceFactoryBinary.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/ResourceFactoryBinary.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/ResourceFactoryXML.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/ResourceFactoryXML.cpp
 )
 source_group("resource" FILES ${Source_Files__Resource})
 
@@ -364,7 +371,20 @@ set(Source_Files__Resource__Factories
     ${CMAKE_CURRENT_SOURCE_DIR}/resource/factory/VertexFactory.h
 )
 source_group("resource/factory" FILES ${Source_Files__Resource__Factories})
-target_sources(libultraship PRIVATE ${Source_Files__Resource} ${Source_Files__Resource__Types} ${Source_Files__Resource__Factories})
+
+set(Source_Files__Resource__Archive
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/archive/Archive.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/archive/Archive.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/archive/OtrArchive.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/archive/OtrArchive.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/archive/O2rArchive.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/archive/O2rArchive.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/archive/ArchiveManager.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/resource/archive/ArchiveManager.cpp
+)
+source_group("resource/archive" FILES ${Source_Files__Resource__Archive})
+
+target_sources(libultraship PRIVATE ${Source_Files__Resource} ${Source_Files__Resource__Types} ${Source_Files__Resource__Factories} ${Source_Files__Resource__Archive})
 
 #=================== Graphic ===================
 
@@ -448,10 +468,18 @@ endif()
 
 #=================== Linking ===================
 
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "CafeOS" AND NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    target_link_libraries(libultraship PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,storm>")
+else()
+    target_link_libraries(libultraship PUBLIC storm)
+endif()
 target_link_libraries(libultraship
     PRIVATE StrHash64
-    PUBLIC ZAPDUtils ImGui storm tinyxml2 nlohmann_json::nlohmann_json
+    PUBLIC ZAPDUtils ImGui tinyxml2 nlohmann_json::nlohmann_json
 )
+
+find_package(libzip REQUIRED)
+target_link_libraries(libultraship PRIVATE libzip::zip)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -467,14 +495,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     target_link_libraries(libultraship PRIVATE ${OSX_FOUNDATION} ${OSX_AVFOUNDATION} ${METAL} ${QUARTZCORE} ${CMAKE_DL_LIBS})
 endif()
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    find_package(PulseAudio)
-    target_link_libraries(libultraship PRIVATE ${PULSEAUDIO_LIBRARY})
-endif()
-
 if (USE_OPENGLES)
-    find_library(OPENGLES_LIBRARY GLESv3)
-    target_link_libraries(libultraship PRIVATE GLESv3)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+        find_library(OPENGLES_LIBRARY GLESv3)
+        target_link_libraries(libultraship PRIVATE GLESv3)
+    else()
+        find_library(OPENGLES_LIBRARY GLESv2)
+        target_link_libraries(libultraship PRIVATE GLESv2)
+    endif()
 endif()
 
 #=================== Compile Options & Defs ===================

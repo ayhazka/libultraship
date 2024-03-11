@@ -575,9 +575,9 @@ static std::string gfx_get_base_texture_path(const std::string& path) {
     return path;
 }
 
-static void gfx_texture_cache_delete(const uint8_t* orig_addr) {
+void gfx_texture_cache_delete(const uint8_t* orig_addr) {
     while (gfx_texture_cache.map.bucket_count() > 0) {
-        TextureCacheKey key = { orig_addr, { 0 }, 0, 0 }; // bucket index only depends on the address
+        TextureCacheKey key = { orig_addr, { 0 }, 0, 0, 0 }; // bucket index only depends on the address
         size_t bucket = gfx_texture_cache.map.bucket(key);
         bool again = false;
         for (auto it = gfx_texture_cache.map.begin(bucket); it != gfx_texture_cache.map.end(bucket); ++it) {
@@ -929,10 +929,10 @@ static void import_texture_raw(int tile, bool importReplacement) {
     // if texture type is CI4 or CI8 we need to apply tlut to it
     switch (type) {
         case LUS::TextureType::Palette4bpp:
-            import_texture_ci4(tile, false);
+            import_texture_ci4(tile, importReplacement);
             return;
         case LUS::TextureType::Palette8bpp:
-            import_texture_ci8(tile, false);
+            import_texture_ci8(tile, importReplacement);
             return;
         default:
             break;
@@ -996,7 +996,7 @@ static void import_texture(int i, int tile, bool importReplacement) {
     uint32_t texFlags = rdp.loaded_texture[rdp.texture_tile[tile].tmem_index].tex_flags;
     uint32_t tmem_index = rdp.texture_tile[tile].tmem_index;
     uint8_t palette_index = rdp.texture_tile[tile].palette;
-    uint32_t size_bytes = rdp.loaded_texture[rdp.texture_tile[tile].tmem_index].orig_size_bytes;
+    uint32_t orig_size_bytes = rdp.loaded_texture[rdp.texture_tile[tile].tmem_index].orig_size_bytes;
 
     const RawTexMetadata* metadata = &rdp.loaded_texture[rdp.texture_tile[tile].tmem_index].raw_tex_metadata;
     const uint8_t* orig_addr =
@@ -1007,9 +1007,9 @@ static void import_texture(int i, int tile, bool importReplacement) {
 
     TextureCacheKey key;
     if (fmt == G_IM_FMT_CI) {
-        key = { orig_addr, { rdp.palettes[0], rdp.palettes[1] }, fmt, siz, palette_index, size_bytes };
+        key = { orig_addr, { rdp.palettes[0], rdp.palettes[1] }, fmt, siz, palette_index, orig_size_bytes };
     } else {
-        key = { orig_addr, {}, fmt, siz, palette_index, size_bytes };
+        key = { orig_addr, {}, fmt, siz, palette_index, orig_size_bytes };
     }
 
     if (gfx_texture_cache_lookup(i, key)) {
@@ -1081,7 +1081,7 @@ static void import_texture_mask(int i, int tile) {
         return;
     }
 
-    TextureCacheKey key = { orig_addr, {}, 0, 0, 0 };
+    TextureCacheKey key = { orig_addr, {}, 0, 0, 0, 0 };
 
     if (gfx_texture_cache_lookup(i, key)) {
         return;
@@ -1594,6 +1594,12 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx, bo
             if (linear_filter != rendering_state.textures[i]->second.linear_filter ||
                 cms != rendering_state.textures[i]->second.cms || cmt != rendering_state.textures[i]->second.cmt) {
                 gfx_flush();
+
+                // Set the same sampler params on the blended texture. Needed for opengl.
+                if (rdp.loaded_texture[i].blended) {
+                    gfx_rapi->set_sampler_parameters(SHADER_FIRST_REPLACEMENT_TEXTURE + i, linear_filter, cms, cmt);
+                }
+
                 gfx_rapi->set_sampler_parameters(i, linear_filter, cms, cmt);
                 rendering_state.textures[i]->second.linear_filter = linear_filter;
                 rendering_state.textures[i]->second.cms = cms;
@@ -3391,4 +3397,12 @@ void gfx_register_blended_texture(const char* name, uint8_t* mask, uint8_t* repl
     }
 
     masked_textures[name] = MaskedTextureEntry{ mask, replacement };
+}
+
+void gfx_unregister_blended_texture(const char* name) {
+    if (gfx_check_image_signature(name)) {
+        name += 7;
+    }
+
+    masked_textures.erase(name);
 }
