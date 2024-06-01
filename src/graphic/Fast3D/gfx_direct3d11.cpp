@@ -15,8 +15,6 @@
 #include <d3d11.h>
 #include <d3dcompiler.h>
 
-#include "libultraship/libultraship.h"
-
 #ifndef _LANGUAGE_C
 #define _LANGUAGE_C
 #endif
@@ -29,6 +27,8 @@
 
 #include "gfx_screen_config.h"
 #include "window/gui/Gui.h"
+#include "Context.h"
+#include "config/ConsoleVariable.h"
 
 #include "gfx_cc.h"
 #include "gfx_rendering_api.h"
@@ -170,7 +170,7 @@ static void create_depth_stencil_objects(uint32_t width, uint32_t height, uint32
     texture_desc.ArraySize = 1;
     texture_desc.Format =
         d3d.feature_level >= D3D_FEATURE_LEVEL_10_0 ? DXGI_FORMAT_R32_TYPELESS : DXGI_FORMAT_R24G8_TYPELESS;
-    texture_desc.SampleDesc.Count = d3d.feature_level >= D3D_FEATURE_LEVEL_10_1 ? msaa_count : 1;
+    texture_desc.SampleDesc.Count = msaa_count;
     texture_desc.SampleDesc.Quality = 0;
     texture_desc.Usage = D3D11_USAGE_DEFAULT;
     texture_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | (srv != nullptr ? D3D11_BIND_SHADER_RESOURCE : 0);
@@ -385,9 +385,9 @@ void CSMain(uint3 DTid : SV_DispatchThreadID) {
 
     // Create ImGui
 
-    LUS::GuiWindowInitData window_impl;
+    Ship::GuiWindowInitData window_impl;
     window_impl.Dx11 = { gfx_dxgi_get_h_wnd(), d3d.context.Get(), d3d.device.Get() };
-    LUS::Context::GetInstance()->GetWindow()->GetGui()->Init(window_impl);
+    Ship::Context::GetInstance()->GetWindow()->GetGui()->Init(window_impl);
 }
 
 static int gfx_d3d11_get_max_texture_size() {
@@ -693,7 +693,9 @@ static void gfx_d3d11_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t
 
         depth_stencil_desc.DepthEnable = d3d.depth_test || d3d.depth_mask;
         depth_stencil_desc.DepthWriteMask = d3d.depth_mask ? D3D11_DEPTH_WRITE_MASK_ALL : D3D11_DEPTH_WRITE_MASK_ZERO;
-        depth_stencil_desc.DepthFunc = d3d.depth_test ? D3D11_COMPARISON_LESS_EQUAL : D3D11_COMPARISON_ALWAYS;
+        depth_stencil_desc.DepthFunc = d3d.depth_test
+                                           ? (d3d.zmode_decal ? D3D11_COMPARISON_LESS_EQUAL : D3D11_COMPARISON_LESS)
+                                           : D3D11_COMPARISON_ALWAYS;
         depth_stencil_desc.StencilEnable = false;
 
         ThrowIfFailed(d3d.device->CreateDepthStencilState(&depth_stencil_desc, d3d.depth_stencil_state.GetAddressOf()));
@@ -717,7 +719,8 @@ static void gfx_d3d11_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t
         const int n64modeFactor = 120;
         const int noVanishFactor = 100;
         float SSDB = -2;
-        switch (CVarGetInteger("gZFightingMode", 0)) {
+
+        switch (Ship::Context::GetInstance()->GetConsoleVariables()->GetInteger(CVAR_Z_FIGHTING_MODE, 0)) {
             case 1: // scaled z-fighting (N64 mode like)
                 SSDB = -1.0f * (float)d3d.render_target_height / n64modeFactor;
                 break;
@@ -859,8 +862,10 @@ static void gfx_d3d11_update_framebuffer_parameters(int fb_id, uint32_t width, u
     Framebuffer& fb = d3d.framebuffers[fb_id];
     TextureData& tex = d3d.textures[fb.texture_id];
 
-    width = max(width, 1U);
-    height = max(height, 1U);
+    width = ((width) > (1U) ? (width) : (1U));
+    height = ((height) > (1U) ? (height) : (1U));
+    // We can't use MSAA the way we are using it on Feature Level 10.0 Hardware, so disable it altogether.
+    msaa_level = d3d.feature_level < D3D_FEATURE_LEVEL_10_1 ? 1 : msaa_level;
     while (msaa_level > 1 && d3d.msaa_num_quality_levels[msaa_level - 1] == 0) {
         --msaa_level;
     }
@@ -880,7 +885,7 @@ static void gfx_d3d11_update_framebuffer_parameters(int fb_id, uint32_t width, u
             texture_desc.MiscFlags = 0;
             texture_desc.ArraySize = 1;
             texture_desc.MipLevels = 1;
-            texture_desc.SampleDesc.Count = d3d.feature_level >= D3D_FEATURE_LEVEL_10_1 ? msaa_level : 1;
+            texture_desc.SampleDesc.Count = msaa_level;
             texture_desc.SampleDesc.Quality = 0;
 
             ThrowIfFailed(d3d.device->CreateTexture2D(&texture_desc, nullptr, tex.texture.ReleaseAndGetAddressOf()));
@@ -947,8 +952,6 @@ void gfx_d3d11_start_draw_to_framebuffer(int fb_id, float noise_scale) {
 
 void gfx_d3d11_clear_framebuffer(void) {
     Framebuffer& fb = d3d.framebuffers[d3d.current_framebuffer];
-    const float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-    d3d.context->ClearRenderTargetView(fb.render_target_view.Get(), clearColor);
     if (fb.has_depth_buffer) {
         d3d.context->ClearDepthStencilView(fb.depth_stencil_view.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
     }
@@ -969,6 +972,139 @@ void* gfx_d3d11_get_framebuffer_texture_id(int fb_id) {
 void gfx_d3d11_select_texture_fb(int fbID) {
     int tile = 0;
     gfx_d3d11_select_texture(tile, d3d.framebuffers[fbID].texture_id);
+}
+
+void gfx_d3d11_copy_framebuffer(int fb_dst_id, int fb_src_id, int srcX0, int srcY0, int srcX1, int srcY1, int dstX0,
+                                int dstY0, int dstX1, int dstY1) {
+    if (fb_src_id >= (int)d3d.framebuffers.size() || fb_dst_id >= (int)d3d.framebuffers.size()) {
+        return;
+    }
+
+    Framebuffer& fb_dst = d3d.framebuffers[fb_dst_id];
+    Framebuffer& fb_src = d3d.framebuffers[fb_src_id];
+
+    TextureData& td_dst = d3d.textures[fb_dst.texture_id];
+    TextureData& td_src = d3d.textures[fb_src.texture_id];
+
+    // Textures are the same size so we can do a direct copy or resolve
+    if (td_src.height == td_dst.height && td_src.width == td_dst.width) {
+        if (fb_src.msaa_level <= 1) {
+            d3d.context->CopyResource(td_dst.texture.Get(), td_src.texture.Get());
+        } else {
+            d3d.context->ResolveSubresource(td_dst.texture.Get(), 0, td_src.texture.Get(), 0,
+                                            DXGI_FORMAT_R8G8B8A8_UNORM);
+        }
+        return;
+    }
+
+    if (srcY1 > (int)td_src.height || srcX1 > (int)td_src.width || srcX0 < 0 || srcY0 < 0 ||
+        dstY1 > (int)td_dst.height || dstX1 > (int)td_dst.width || dstX0 < 0 || dstY0 < 0) {
+        // Using a source region larger than the source resource or copy outside of the destination resource is
+        // considered undefined behavior and could lead to removal of the rendering device
+        return;
+    }
+
+    D3D11_BOX region;
+    region.left = srcX0;
+    region.right = srcX1;
+    region.top = srcY0;
+    region.bottom = srcY1;
+    region.front = 0;
+    region.back = 1;
+
+    // We can't region copy a multi-sample texture to a single sample texture
+    if (fb_src.msaa_level <= 1) {
+        d3d.context->CopySubresourceRegion(td_dst.texture.Get(), dstX0, dstY0, 0, 0, td_src.texture.Get(), 0, &region);
+    } else {
+        // Setup a temporary texture
+        TextureData td_resolved;
+        td_resolved.width = td_src.width;
+        td_resolved.height = td_src.height;
+
+        D3D11_TEXTURE2D_DESC texture_desc;
+        texture_desc.Width = td_src.width;
+        texture_desc.Height = td_src.height;
+        texture_desc.Usage = D3D11_USAGE_DEFAULT;
+        texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        texture_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        texture_desc.CPUAccessFlags = 0;
+        texture_desc.MiscFlags = 0;
+        texture_desc.ArraySize = 1;
+        texture_desc.MipLevels = 1;
+        texture_desc.SampleDesc.Count = 1;
+        texture_desc.SampleDesc.Quality = 0;
+
+        ThrowIfFailed(d3d.device->CreateTexture2D(&texture_desc, nullptr, td_resolved.texture.GetAddressOf()));
+
+        // Resolve multi-sample to temporary
+        d3d.context->ResolveSubresource(td_resolved.texture.Get(), 0, td_src.texture.Get(), 0,
+                                        DXGI_FORMAT_R8G8B8A8_UNORM);
+        // Then copy the region to the destination
+        d3d.context->CopySubresourceRegion(td_dst.texture.Get(), dstX0, dstY0, 0, 0, td_resolved.texture.Get(), 0,
+                                           &region);
+    }
+}
+
+void gfx_d3d11_read_framebuffer_to_cpu(int fb_id, uint32_t width, uint32_t height, uint16_t* rgba16_buf) {
+    if (fb_id >= (int)d3d.framebuffers.size()) {
+        return;
+    }
+
+    Framebuffer& fb = d3d.framebuffers[fb_id];
+    TextureData& td = d3d.textures[fb.texture_id];
+
+    ID3D11Texture2D* staging = nullptr;
+
+    // Create an staging texture with cpu read access
+    D3D11_TEXTURE2D_DESC texture_desc;
+    texture_desc.Width = width;
+    texture_desc.Height = height;
+    texture_desc.Usage = D3D11_USAGE_STAGING;
+    texture_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    texture_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    texture_desc.BindFlags = 0;
+    texture_desc.MiscFlags = 0;
+    texture_desc.ArraySize = 1;
+    texture_desc.MipLevels = 1;
+    texture_desc.SampleDesc.Count = 1;
+    texture_desc.SampleDesc.Quality = 0;
+
+    ThrowIfFailed(d3d.device->CreateTexture2D(&texture_desc, nullptr, &staging));
+
+    // Copy the framebuffer texture to the staging texture
+    d3d.context->CopyResource(staging, td.texture.Get());
+
+    // Map the staging texture to a resource that we can read
+    D3D11_MAPPED_SUBRESOURCE resource = {};
+    ThrowIfFailed(d3d.context->Map(staging, 0, D3D11_MAP_READ, 0, &resource));
+
+    if (!resource.pData) {
+        return;
+    }
+
+    // Copy the mapped values to a temp array that we can process later
+    uint32_t* temp = new uint32_t[width * height]();
+    for (size_t i = 0; i < height; i++) {
+        memcpy((uint8_t*)temp + (resource.RowPitch * i), (uint8_t*)resource.pData + (resource.RowPitch * i),
+               resource.RowPitch);
+    }
+
+    d3d.context->Unmap(staging, 0);
+
+    // Convert the RGBA32 values to RGBA16
+    for (size_t i = 0; i < width; i++) {
+        for (size_t j = 0; j < height; j++) {
+            uint32_t pixel = temp[i + (j * width)];
+            uint8_t r = (((pixel & 0xFF) + 4) * 0x1F) / 0xFF;
+            uint8_t g = ((((pixel >> 8) & 0xFF) + 4) * 0x1F) / 0xFF;
+            uint8_t b = ((((pixel >> 16) & 0xFF) + 4) * 0x1F) / 0xFF;
+            uint8_t a = ((pixel >> 24) & 0xFF) ? 1 : 0;
+
+            rgba16_buf[i + (j * width)] = (r << 11) | (g << 6) | (b << 1) | a;
+        }
+    }
+
+    delete[] temp;
 }
 
 void gfx_d3d11_set_texture_filter(FilteringMode mode) {
@@ -1041,7 +1177,7 @@ gfx_d3d11_get_pixel_depth(int fb_id, const std::set<std::pair<float, float>>& co
 
     D3D11_MAPPED_SUBRESOURCE ms;
 
-    if (fb.msaa_level > 1 && d3d.feature_level >= D3D_FEATURE_LEVEL_10_1 && d3d.compute_shader_msaa.Get() == nullptr) {
+    if (fb.msaa_level > 1 && d3d.compute_shader_msaa.Get() == nullptr) {
         ThrowIfFailed(d3d.device->CreateComputeShader(d3d.compute_shader_msaa_blob->GetBufferPointer(),
                                                       d3d.compute_shader_msaa_blob->GetBufferSize(), nullptr,
                                                       d3d.compute_shader_msaa.GetAddressOf()));
@@ -1123,7 +1259,9 @@ struct GfxRenderingAPI gfx_direct3d11_api = { gfx_d3d11_get_name,
                                               gfx_d3d11_create_framebuffer,
                                               gfx_d3d11_update_framebuffer_parameters,
                                               gfx_d3d11_start_draw_to_framebuffer,
+                                              gfx_d3d11_copy_framebuffer,
                                               gfx_d3d11_clear_framebuffer,
+                                              gfx_d3d11_read_framebuffer_to_cpu,
                                               gfx_d3d11_resolve_msaa_color_buffer,
                                               gfx_d3d11_get_pixel_depth,
                                               gfx_d3d11_get_framebuffer_texture_id,

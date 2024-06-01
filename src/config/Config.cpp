@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <unordered_map>
 #include <any>
-#include <Utils/StringHelper.h>
+#include "utils/StringHelper.h"
 
 #ifdef __APPLE__
 #include "graphic/Fast3D/gfx_metal.h"
@@ -13,7 +13,7 @@
 
 namespace fs = std::filesystem;
 
-namespace LUS {
+namespace Ship {
 Config::Config(std::string path) : mPath(std::move(path)), mIsNewInstance(false) {
     Reload();
 }
@@ -130,6 +130,39 @@ void Config::Erase(const std::string& key) {
     mFlattenedJson.erase(FormatNestedKey(key));
 }
 
+void Config::EraseBlock(const std::string& key) {
+    nlohmann::json gjson = mFlattenedJson.unflatten();
+    if (key.find(".") != std::string::npos) {
+        nlohmann::json& gjson2 = gjson;
+        std::vector<std::string> dots = StringHelper::Split(key, ".");
+        if (dots.size() > 1) {
+            int curDot = 0;
+            for (auto& dot : dots) {
+                if (gjson2.contains(dot)) {
+                    if (curDot == dots.size()) {
+                        gjson2.erase(dot);
+                    } else {
+                        gjson2 = gjson2[dot];
+                    }
+                }
+            }
+        }
+    } else {
+        if (gjson.contains(key)) {
+            gjson.erase(key);
+        }
+    }
+    mFlattenedJson = gjson.flatten();
+}
+
+void Config::Copy(const std::string& fromKey, const std::string& toKey) {
+    auto nestedFromKey = FormatNestedKey(fromKey);
+    auto nestedToKey = FormatNestedKey(toKey);
+    if (mFlattenedJson.contains(nestedFromKey)) {
+        mFlattenedJson[nestedToKey] = mFlattenedJson[nestedFromKey];
+    }
+}
+
 void Config::Reload() {
     if (mPath == "None" || !fs::exists(mPath) || !fs::is_regular_file(mPath)) {
         mIsNewInstance = true;
@@ -225,9 +258,6 @@ WindowBackend Config::GetWindowBackend() {
 #ifdef ENABLE_DX11
     return WindowBackend::DX11;
 #endif
-#ifdef __WIIU__
-    return WindowBackend::GX2;
-#endif
 #ifdef __APPLE__
     if (Metal_IsSupported()) {
         return WindowBackend::SDL_METAL;
@@ -284,4 +314,4 @@ uint32_t ConfigVersionUpdater::GetVersion() {
     return mVersion;
 }
 
-} // namespace LUS
+} // namespace Ship

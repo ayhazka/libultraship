@@ -4,15 +4,11 @@
 #include <memory>
 #include <vector>
 #include "endianness.h"
-#include "Vec2f.h"
-#include "Vec3f.h"
-#include "Vec3s.h"
-#include "Color3b.h"
 #include "Stream.h"
 
 //class BinaryReader;
 
-namespace LUS {
+namespace Ship {
 
 class BinaryReader {
   public:
@@ -40,11 +36,6 @@ class BinaryReader {
     uint64_t ReadUInt64();
     float ReadFloat();
     double ReadDouble();
-    ZAPDUtils::Vec3f ReadVec3f();
-    ZAPDUtils::Vec3s ReadVec3s();
-    ZAPDUtils::Vec3s ReadVec3b();
-    ZAPDUtils::Vec2f ReadVec2f();
-    Color3b ReadColor3b();
     std::string ReadString();
     std::string ReadCString();
 
@@ -54,4 +45,4 @@ class BinaryReader {
     std::shared_ptr<Stream> mStream;
     Endianness mEndianness = Endianness::Native;
 };
-} // namespace LUS
+} // namespace Ship

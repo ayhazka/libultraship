@@ -7,7 +7,7 @@
 #include "audio/Audio.h"
 #include "window/Window.h"
 
-namespace LUS {
+namespace Ship {
 
 /**
  * @brief Abstract class representing a Config Version Updater, intended to express how to
@@ -56,6 +56,8 @@ class Config {
     void SetInt(const std::string& key, int32_t value);
     void SetUInt(const std::string& key, uint32_t value);
     void Erase(const std::string& key);
+    void EraseBlock(const std::string& key);
+    void Copy(const std::string& fromKey, const std::string& toKey);
     bool Contains(const std::string& key);
     void Reload();
     void Save();
@@ -98,4 +100,4 @@ class Config {
     bool mIsNewInstance;
     std::map<uint32_t, std::shared_ptr<ConfigVersionUpdater>> mVersionUpdaters;
 };
-} // namespace LUS
+} // namespace Ship

@@ -1,23 +1,23 @@
 #include "SDLMapping.h"
 #include <spdlog/spdlog.h>
 #include "Context.h"
-#include "controller/deviceindex/LUSDeviceIndexToSDLDeviceIndexMapping.h"
+#include "controller/deviceindex/ShipDeviceIndexToSDLDeviceIndexMapping.h"
 
-#include <Utils/StringHelper.h>
+#include "utils/StringHelper.h"
 
-namespace LUS {
-SDLMapping::SDLMapping(LUSDeviceIndex lusDeviceIndex) : ControllerMapping(lusDeviceIndex), mController(nullptr) {
+namespace Ship {
+SDLMapping::SDLMapping(ShipDeviceIndex shipDeviceIndex) : ControllerMapping(shipDeviceIndex), mController(nullptr) {
 }
 
 SDLMapping::~SDLMapping() {
 }
 
 bool SDLMapping::OpenController() {
-    auto deviceIndexMapping = std::static_pointer_cast<LUSDeviceIndexToSDLDeviceIndexMapping>(
-        LUS::Context::GetInstance()
+    auto deviceIndexMapping = std::static_pointer_cast<ShipDeviceIndexToSDLDeviceIndexMapping>(
+        Ship::Context::GetInstance()
             ->GetControlDeck()
             ->GetDeviceIndexMappingManager()
-            ->GetDeviceIndexMappingFromLUSDeviceIndex(mLUSDeviceIndex));
+            ->GetDeviceIndexMappingFromShipDeviceIndex(mShipDeviceIndex));
 
     if (deviceIndexMapping == nullptr) {
         // we don't have an sdl device for this LUS device index
@@ -45,11 +45,15 @@ bool SDLMapping::CloseController() {
     return true;
 }
 
-bool SDLMapping::ControllerLoaded() {
+bool SDLMapping::ControllerLoaded(bool closeIfDisconnected) {
     SDL_GameControllerUpdate();
 
-    // If the controller is disconnected, close it.
+    // If the controller is disconnected
     if (mController != nullptr && !SDL_GameControllerGetAttached(mController)) {
+        if (!closeIfDisconnected) {
+            return false;
+        }
+
         CloseController();
     }
 
@@ -94,12 +98,8 @@ bool SDLMapping::UsesPlaystationLayout() {
 }
 
 bool SDLMapping::UsesSwitchLayout() {
-#ifdef __SWITCH__
-    return true;
-#else
     auto type = GetSDLControllerType();
     return type == SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO || type == SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR;
-#endif
 }
 
 bool SDLMapping::UsesXboxLayout() {
@@ -115,11 +115,11 @@ bool SDLMapping::UsesGameCubeLayout() {
 }
 
 int32_t SDLMapping::GetSDLDeviceIndex() {
-    auto deviceIndexMapping = std::static_pointer_cast<LUSDeviceIndexToSDLDeviceIndexMapping>(
-        LUS::Context::GetInstance()
+    auto deviceIndexMapping = std::static_pointer_cast<ShipDeviceIndexToSDLDeviceIndexMapping>(
+        Ship::Context::GetInstance()
             ->GetControlDeck()
             ->GetDeviceIndexMappingManager()
-            ->GetDeviceIndexMappingFromLUSDeviceIndex(mLUSDeviceIndex));
+            ->GetDeviceIndexMappingFromShipDeviceIndex(mShipDeviceIndex));
 
     if (deviceIndexMapping == nullptr) {
         // we don't have an sdl device for this LUS device index
@@ -130,10 +130,10 @@ int32_t SDLMapping::GetSDLDeviceIndex() {
 }
 
 std::string SDLMapping::GetSDLControllerName() {
-    return LUS::Context::GetInstance()
+    return Ship::Context::GetInstance()
         ->GetControlDeck()
         ->GetDeviceIndexMappingManager()
-        ->GetSDLControllerNameFromLUSDeviceIndex(mLUSDeviceIndex);
+        ->GetSDLControllerNameFromShipDeviceIndex(mShipDeviceIndex);
 }
 
 std::string SDLMapping::GetSDLDeviceName() {
@@ -167,4 +167,4 @@ int32_t SDLMapping::GetCurrentSDLDeviceIndex() {
     // didn't find one
     return -1;
 }
-} // namespace LUS
+} // namespace Ship

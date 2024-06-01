@@ -3,7 +3,7 @@
 #include "Context.h"
 #include "spdlog/spdlog.h"
 
-namespace LUS {
+namespace Ship {
 O2rArchive::O2rArchive(const std::string& archivePath) : Archive(archivePath) {
 }
 
@@ -11,13 +11,13 @@ O2rArchive::~O2rArchive() {
     SPDLOG_TRACE("destruct o2rarchive: {}", GetPath());
 }
 
-std::shared_ptr<File> O2rArchive::LoadFileRaw(uint64_t hash) {
+std::shared_ptr<Ship::File> O2rArchive::LoadFileRaw(uint64_t hash) {
     const std::string& filePath =
         *Context::GetInstance()->GetResourceManager()->GetArchiveManager()->HashToString(hash);
     return LoadFileRaw(filePath);
 }
 
-std::shared_ptr<File> O2rArchive::LoadFileRaw(const std::string& filePath) {
+std::shared_ptr<Ship::File> O2rArchive::LoadFileRaw(const std::string& filePath) {
     if (mZipArchive == nullptr) {
         SPDLOG_TRACE("Failed to open file {} from zip archive {}. Archive not open.", filePath, GetPath());
         return nullptr;
@@ -69,6 +69,12 @@ bool O2rArchive::Open() {
     for (auto i = 0; i < zipNumEntries; i++) {
         auto zipEntryName = zip_get_name(mZipArchive, i, 0);
 
+        // It is possible for directories to have entries in a zip
+        // file, we don't want those indexed as files in the archive
+        if (zipEntryName[strlen(zipEntryName) - 1] == '/') {
+            continue;
+        }
+
         IndexFile(zipEntryName);
     }
 
@@ -83,4 +89,4 @@ bool O2rArchive::Close() {
 
     return true;
 }
-} // namespace LUS
+} // namespace Ship
